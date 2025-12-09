@@ -21,6 +21,7 @@ st.markdown("There are 6 subcategories: high, medium, low, top importance & NA/u
 st.markdown("Each category is associated with a talk page. Using the talk page, I then accessed the page properties via mwClient API calls. I finally talked to the duckdb server and filtered the full dataset using this unique QID list.")
 st.markdown("In the future, I will try to reassemble this dataset to also retrieve other properties like page size and number of unique revisions, as these are helpful features that can be used to build a classifier.")
 
+# UNIQUE HEALTH ARTICLES Section
 @st.cache_data
 def load_data_1():
     try:
@@ -32,7 +33,7 @@ def load_data_1():
             df1 = df1.drop(columns=["Unnamed: 0"])
             
         # Ensure correct data types
-        df1['total_pageviews'] = pd.to_numeric(df['total_pageviews'], errors='coerce').fillna(0)
+        df1['total_pageviews'] = pd.to_numeric(df1['total_pageviews'], errors='coerce').fillna(0)
         df1['description'] = df1['description'].fillna("")
         
         return df1
@@ -64,6 +65,7 @@ fig_bar.update_traces(textposition='outside')
 st.plotly_chart(fig_bar, use_container_width=True)
 
 
+# ALL HEALTH ARTICLES by date section
 def load_data_2():
     try:
         # Load the uploaded file
@@ -73,6 +75,114 @@ def load_data_2():
     except FileNotFoundError:
         st.error("File not found. Please upload it.")
         return pd.DataFrame()
+df2 = load_data_2()
+df2['date'] = pd.to_datetime(df2['date'])
 
-st.subheader("Pageview Across Time Analysis")
 
+st.subheader("Time Series Analysis: Pageviews by Category")
+all_cats = sorted(df2['category'].unique())
+selected_cats = st.multiselect(
+    "Select Categories to Compare",
+    options=all_cats,
+    default=all_cats # Select all by default
+)
+agg_type = st.radio("Granularity", ["Daily", "Weekly", "Monthly"], index=1, key="granularity_cat")
+
+# We sum pageviews for ALL articles within the same category for the given time period
+if agg_type == "Daily":
+    # Group by Date AND Category
+    plot_df = df2.groupby(['date', 'category'])['pageviews'].sum().reset_index()
+    
+elif agg_type == "Weekly":
+    plot_df = (
+        df2
+        .set_index('date')
+        .groupby('category')
+        .resample('W')['pageviews']
+        .sum()
+        .reset_index()
+    )
+    
+elif agg_type == "Monthly":
+    plot_df = (
+        df2
+        .set_index('date')
+        .groupby('category')
+        .resample('M')['pageviews']
+        .sum()
+        .reset_index()
+    )
+
+# --- 4. Visualization ---
+
+if not plot_df.empty:
+    st.subheader(f"Total Pageviews by Category ({agg_type})")
+    
+    fig = px.line(
+        plot_df, 
+        x='date', 
+        y='pageviews', 
+        color='category', # Different line for each category
+        markers=True,
+        title="Aggregate Pageviews per Category",
+        template="plotly_white"
+    )
+    
+    fig.update_traces(hovertemplate='%{y:,.0f} views')
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Summary Metrics
+    st.divider()
+    cols = st.columns(len(selected_cats))
+    for i, cat in enumerate(selected_cats):
+        total_views = plot_df[plot_df['category'] == cat]['pageviews'].sum()
+        cols[i].metric(label=cat, value=f"{total_views:,.0f}")
+
+else:
+    st.info("No data available for the selected filters.")
+
+
+
+st.subheader("Time Series Analysis: Aggregated Pageviews Over Time")
+agg_type = st.radio("Granularity", ["Daily", "Weekly", "Monthly"], index=1, key="granularity_agg")
+
+# Step 2: Aggregate
+# We sum pageviews for ALL articles within the same category for the given time period
+if agg_type == "Daily":
+    # Group by Date AND Category
+    plot_df = df2.groupby('date')['pageviews'].sum().reset_index()
+    
+elif agg_type == "Weekly":
+    plot_df = (
+        df2
+        .set_index('date')
+        .resample('W')['pageviews']
+        .sum()
+        .reset_index()
+    )
+    
+elif agg_type == "Monthly":
+    plot_df = (
+        df2
+        .set_index('date')
+        .resample('M')['pageviews']
+        .sum()
+        .reset_index()
+    )
+
+# --- 4. Visualization ---
+
+if not plot_df.empty:
+    st.subheader("Pageviews Across Time")
+    
+    fig = px.line(
+        plot_df, 
+        x='date', 
+        y='pageviews', 
+        markers=True,
+        title="Aggregate Pageviews",
+        template="plotly_white"
+    )
+    
+    fig.update_traces(hovertemplate='%{y:,.0f} views')
+    st.plotly_chart(fig, use_container_width=True)
